@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ARES-X · Navegación 3D</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.ico">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="ares_x_3d.css">
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="ARES-X">
+        <span class="brand-mark">A</span>
+        <span>ARES<span class="brand-light">/X</span></span>
+      </a>
+      <div class="top-meta"><span class="live-dot"></span> SIMULACIÓN PLANETARIA</div>
+      <div class="version-tag">NAVEGACIÓN AUTÓNOMA <span>·</span> 3D</div>
+    </header>
+
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div class="intro">
+          <div class="eyebrow">CENTRO DE CONTROL <span>01 — 08</span></div>
+          <h1>Exploración<br>de superficie</h1>
+          <p>Configura el terreno. El rover recalcula y navega solo.</p>
+        </div>
+
+        <section class="control-section">
+          <label class="section-label" for="planet">CUERPO CELESTE</label>
+          <select id="planet" class="field">
+            <option value="mars">Marte · Rover</option>
+            <option value="mercury">Mercurio · Rover</option>
+            <option value="earth">Tierra · Rover</option>
+            <option value="venus">Venus · Rover hipotético</option>
+            <option value="jupiter">Júpiter · Sonda virtual</option>
+            <option value="saturn">Saturno · Sonda virtual</option>
+            <option value="uranus">Urano · Sonda virtual</option>
+            <option value="neptune">Neptuno · Sonda virtual</option>
+          </select>
+          <div id="planetNotice" class="planet-notice" role="status"></div>
+        </section>
+
+        <section class="control-section">
+          <div class="section-heading">
+            <label class="section-label">EDITAR MAPA</label>
+            <span class="hint">CLIC PARA AÑADIR · ARRASTRA PARA MOVER</span>
+          </div>
+          <div class="tool-grid" id="tools">
+            <button class="tool active" data-tool="rock"><span class="tool-icon rock-icon"></span>Piedra</button>
+            <button class="tool" data-tool="crater"><span class="tool-icon crater-icon"></span>Cráter</button>
+            <button class="tool" data-tool="gas"><span class="tool-icon gas-icon"></span>Gas</button>
+            <button class="tool" data-tool="rough"><span class="tool-icon rough-icon"></span>Rocas</button>
+            <button class="tool" data-tool="cliff"><span class="tool-icon cliff-icon"></span>Barranco</button>
+            <button class="tool" data-tool="science"><span class="tool-icon science-icon">★</span>Muestra</button>
+            <button class="tool" data-tool="start"><span class="tool-icon start-icon"></span>Inicio</button>
+            <button class="tool" data-tool="goal"><span class="tool-icon goal-icon"></span>Destino</button>
+            <button class="tool erase-tool" data-tool="erase"><span class="tool-icon erase-icon"></span>Borrar</button>
+          </div>
+        </section>
+
+        <section class="control-section">
+          <div class="section-heading">
+            <label class="section-label" for="strategy">ESTRATEGIA DE RUTA</label>
+            <span id="routeModeLabel" class="micro-chip">DISTANCIA</span>
+          </div>
+          <select id="strategy" class="field">
+            <option value="safe">Buscar el camino más seguro</option>
+            <option value="distance">Buscar el camino más corto</option>
+          </select>
+          <label class="slider-label" for="riskWeight"><span>Penalización de riesgo</span><output id="riskValue">0.60</output></label>
+          <input id="riskWeight" type="range" min="0" max="1.5" step="0.05" value="0.6">
+          <label class="slider-label" for="gasLevel"><span>Concentración de gas</span><output id="gasValue">70%</output></label>
+          <input id="gasLevel" type="range" min="10" max="100" step="5" value="70">
+          <label class="slider-label" for="sciencePriority"><span>Prioridad científica</span><output id="sciencePriorityValue">70%</output></label>
+          <input id="sciencePriority" type="range" min="0" max="100" step="5" value="70">
+        </section>
+
+        <section class="control-section compact-section">
+          <div class="section-heading">
+            <label class="section-label" for="battery">ENERGÍA</label>
+            <span id="batteryValue" class="battery-value">100%</span>
+          </div>
+          <input id="battery" type="range" min="0" max="100" step="1" value="100">
+          <label class="slider-label" for="speed"><span>Velocidad de simulación</span><output id="speedValue">500 ms</output></label>
+          <input id="speed" type="range" min="180" max="1200" step="20" value="500">
+        </section>
+
+        <section class="mission-controls">
+          <button id="play" class="play-button"><span class="play-symbol">▶</span> Iniciar misión</button>
+          <div class="secondary-buttons">
+            <button id="step" class="secondary-button">Un paso</button>
+            <button id="reset" class="secondary-button">Reiniciar</button>
+          </div>
+          <button id="clear" class="text-button">Limpiar elementos del mapa</button>
+        </section>
+
+        <div class="sidebar-foot">
+          <span class="live-dot"></span>
+          <span id="connectionStatus">PLANIFICADOR ACTIVO</span>
+          <span class="foot-version">v0.2</span>
+        </div>
+      </aside>
+
+      <section class="workspace">
+        <div class="workspace-head">
+          <div>
+            <div class="eyebrow">MAPA TÁCTICO <span>·</span> 3D INTERACTIVO</div>
+            <div class="workspace-title"><span id="planetName">MARTE</span><span class="title-divider">/</span><span id="modeName">TERRENO DE EXPLORACIÓN</span></div>
+          </div>
+          <div class="map-tools">
+            <div class="legend"><span class="legend-item"><i class="legend-dot rover-dot"></i><span id="roverLegend">ROVER</span></span><span class="legend-item"><i class="legend-dot destination-dot"></i>DESTINO</span></div>
+            <button id="viewReset" class="view-button" title="Restablecer vista">↗ <span>RESTABLECER VISTA</span></button>
+          </div>
+        </div>
+
+        <div id="sceneWrap" class="scene-wrap">
+          <div id="scene" aria-label="Mapa tridimensional. Usa el ratón para rotar, acercar y editar objetos."></div>
+          <div class="scene-corner top-left">
+            <span class="corner-label">SECTOR</span>
+            <span class="corner-value">ARES-X / 20 × 20</span>
+          </div>
+          <div class="scene-corner top-right">
+            <span class="coordinate-label">X <b id="coordX">02</b></span>
+            <span class="coordinate-label">Z <b id="coordZ">19</b></span>
+            <span class="coordinate-label">ALT <b>10 m</b></span>
+          </div>
+          <div class="scene-bottom">
+            <span id="statusDot" class="status-dot"></span>
+            <span id="statusText">Listo para iniciar. Elige un elemento para colocarlo.</span>
+            <span class="scene-hint">ARRASTRAR PARA ROTAR <i>·</i> RUEDA PARA ZOOM</span>
+          </div>
+          <div id="toast" class="toast" role="status"></div>
+        </div>
+
+        <div class="telemetry-grid">
+          <article class="telemetry-card">
+            <span class="telemetry-label">POSICIÓN DEL ROVER</span>
+            <strong id="positionStat">F19 · C02</strong>
+            <span class="telemetry-sub">COORDENADAS DE CUADRÍCULA</span>
+          </article>
+          <article class="telemetry-card">
+            <span class="telemetry-label">DISTANCIA PLANIFICADA</span>
+            <strong id="distanceStat">— <small>m</small></strong>
+            <span id="distanceSub" class="telemetry-sub">HASTA EL DESTINO</span>
+          </article>
+          <article class="telemetry-card">
+            <span class="telemetry-label">RIESGO DE LA RUTA</span>
+            <strong id="riskStat">— <small>/ 100</small></strong>
+            <span class="telemetry-sub">ESTIMACIÓN DEL MAPA</span>
+          </article>
+          <article class="telemetry-card">
+            <span class="telemetry-label">ENERGÍA DISPONIBLE</span>
+            <strong id="energyStat">100<small>%</small></strong>
+            <span id="stepStat" class="telemetry-sub">PASOS: 0</span>
+          </article>
+          <article class="telemetry-card">
+            <span class="telemetry-label">CIENCIA RECOLECTADA</span>
+            <strong id="scienceStat">0</strong>
+            <span class="telemetry-sub">MUESTRAS SIMULADAS</span>
+          </article>
+        </div>
+
+        <div class="route-summary">
+          <div class="route-key"><i class="route-line shortest-line"></i><span>Más corta</span><b id="shortestStat">—</b></div>
+          <div class="route-key"><i class="route-line safe-line"></i><span>Menor riesgo</span><b id="safeStat">—</b></div>
+          <div class="route-summary-note">RUTAS ACTUALIZADAS AL CAMBIAR EL MAPA</div>
+        </div>
+
+        <section class="mission-tools">
+          <div class="mission-tools-heading">
+            <div>
+              <div class="eyebrow">OPERACIÓN DE MISIÓN</div>
+              <div class="tools-title">Eventos, diagnóstico y resultados</div>
+            </div>
+            <span class="micro-chip">PYTHON · CPU</span>
+          </div>
+          <div class="event-controls">
+            <button class="event-button" data-event="storm">Tormenta</button>
+            <button class="event-button" data-event="quake">Sismo</button>
+            <button class="event-button" data-event="meteor">Impacto</button>
+            <button class="event-button" data-event="night">Noche</button>
+            <select id="faultSelect" class="field fault-select">
+              <option value="camera">Fallo de cámara</option>
+              <option value="lidar">Fallo de LIDAR</option>
+              <option value="gas">Fallo sensor de gas</option>
+              <option value="all">Fallo total de navegación</option>
+            </select>
+            <button id="injectFault" class="event-button">Inyectar fallo</button>
+            <button id="clearFault" class="event-button">Restaurar sensores</button>
+          </div>
+          <div class="export-controls">
+            <a class="export-button" href="/api/export/trace.csv" download>Exportar traza CSV</a>
+            <a class="export-button" href="/api/export/mission.json" download>Exportar misión JSON</a>
+            <button id="runExperiment" class="export-button experiment-button">Comparar 20 semillas y ablaciones</button>
+          </div>
+          <div id="experimentStatus" class="experiment-status" role="status">20 semillas por política; las variantes con AG comparten un presupuesto de 8 individuos × 5 generaciones.</div>
+        </section>
+
+        <details id="diagnostics" class="inspector" open>
+          <summary>
+            <span><span class="eyebrow">AUDITORÍA DEL SISTEMA</span><strong>¿Por qué decidió el rover?</strong></span>
+            <span id="decisionBadge" class="micro-chip">ESPERANDO PRIMER PASO</span>
+          </summary>
+          <div class="inspector-grid">
+            <article class="inspector-card">
+              <div class="inspector-title"><i class="algorithm-mark rna-mark">N</i><span>RNA · PERCEPCIÓN</span></div>
+              <div id="rnaPrediction" class="diagnostic-main">Esperando lecturas</div>
+              <div id="rnaConfidence" class="diagnostic-note">Confianza: —</div>
+              <div id="rnaProbabilities" class="probability-list"></div>
+              <div id="rnaSensors" class="sensor-list"></div>
+              <div id="rnaMetrics" class="metric-note">Modelo MLP 8–32–16–3 · conjunto de prueba por mapas</div>
+              <div class="chart-heading"><span>PÉRDIDA DE ENTRENAMIENTO RNA</span><span>MLP · CPU</span></div>
+              <svg id="rnaLossChart" class="fitness-chart" viewBox="0 0 640 100" role="img" aria-label="Pérdida de entrenamiento de la RNA"></svg>
+            </article>
+            <article class="inspector-card">
+              <div class="inspector-title"><i class="algorithm-mark fuzzy-mark">μ</i><span>LÓGICA DIFUSA · CONTROL</span></div>
+              <div id="fuzzyOutput" class="diagnostic-main">Velocidad —</div>
+              <div id="fuzzyMethod" class="diagnostic-note">Mamdani min–max · centroide</div>
+              <div id="fuzzyMemberships" class="membership-list"></div>
+              <div id="fuzzyRules" class="rule-list"></div>
+            </article>
+            <article class="inspector-card wide-card">
+              <div class="inspector-title"><i class="algorithm-mark ga-mark">AG</i><span>ALGORITMO GENÉTICO · RUTAS CANDIDATAS</span><span id="generationCount" class="micro-chip">0 GENERACIONES</span></div>
+              <div id="candidateList" class="candidate-list"><div class="empty-note">El planificador generará candidatos al iniciar.</div></div>
+              <div class="chart-heading"><span>EVOLUCIÓN DEL FITNESS</span><span>MENOR ES MEJOR</span></div>
+              <svg id="fitnessChart" class="fitness-chart" viewBox="0 0 640 100" role="img" aria-label="Evolución del fitness genético"></svg>
+            </article>
+            <article class="inspector-card wide-card">
+              <div class="inspector-title"><i class="algorithm-mark log-mark">≡</i><span>BITÁCORA DE MISIÓN</span><span id="logCount" class="micro-chip">0 EVENTOS</span></div>
+              <div id="missionLog" class="mission-log"><div class="empty-note">Las observaciones, decisiones, eventos y replanteos aparecerán aquí.</div></div>
+            </article>
+            <article class="inspector-card wide-card">
+              <div class="inspector-title"><i class="algorithm-mark test-mark">20</i><span>COMPARACIÓN DE POLÍTICAS · 20 SEMILLAS</span></div>
+              <div id="experimentResults" class="experiment-results"><div class="empty-note">Ejecuta el experimento para comparar el sistema híbrido y las ablaciones sin RNA, sin lógica difusa y sin AG.</div></div>
+            </article>
+          </div>
+        </details>
+
+        <div class="disclaimer">
+          <span>i</span>
+          <p>Simulación académica. El Sol se aleja según el planeta seleccionado; la Luna aparece orbitando la Tierra. Sus distancias se comprimen y los tamaños se ajustan para la escena, no están a escala astronómica. En Júpiter, Saturno, Urano y Neptuno se usa una cuadrícula virtual para una sonda; no representa suelo sólido.</p>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="ares_x_3d.js"></script>
+  </body>
+</html>
