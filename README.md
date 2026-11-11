@@ -49,6 +49,20 @@ tamaños se ajustan para que sean visibles junto al mapa: no están a escala
 astronómica. Los cuerpos del fondo son decorativos y no participan en la
 navegación.
 
+## Despliegue público
+
+El frontend está preparado para Netlify: publicar la raíz del repositorio
+sirve `ares_x_3d.html` en `/` y reenvía `/api/*` a la API de Render. El archivo
+`_redirects` usa `https://ares-x-api.onrender.com`; si Render asigna otra URL,
+actualiza ese destino antes de publicar el sitio.
+
+Para publicar el backend, crea un Blueprint en Render desde este repositorio y
+usa `render.yaml`. El servicio `ares-x-api` instala `requirements.txt` y ejecuta
+Flask con Gunicorn. Luego conecta el mismo repositorio a Netlify con directorio
+base `.` y directorio de publicación `.`; no hace falta comando de build.
+Render en el plan gratuito puede suspender el servicio cuando está inactivo,
+por lo que la primera solicitud posterior puede tardar en responder.
+
 ## Notebook autónomo de Google Colab
 
 Sube `ARES_X_Colab_Hibrido.ipynb` a Google Colab y ejecuta sus celdas en orden.
