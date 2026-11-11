@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import Future, ThreadPoolExecutor
+import os
 from pathlib import Path
 import threading
 import uuid
@@ -16,6 +17,17 @@ from ares_x_engine import MissionEngine, PLANET_PROFILES
 ROOT = Path(__file__).resolve().parent
 app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 1_000_000
+
+_allowed_origins = {
+    "https://ares-x-ac.netlify.app",
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+}
+_allowed_origins.update(
+    origin.strip().rstrip("/")
+    for origin in os.environ.get("ARES_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+)
 
 _engine: MissionEngine | None = None
 _engine_lock = threading.RLock()
@@ -40,6 +52,24 @@ def _body() -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("Se esperaba un objeto JSON.")
     return value
+
+
+@app.before_request
+def validate_mutation_origin() -> Response | None:
+    if request.path.startswith("/api/") and request.method in {"POST", "PATCH", "DELETE"}:
+        if request.headers.get("Origin", "").rstrip("/") not in _allowed_origins:
+            return _json_error("Origen no autorizado para modificar la simulación.", 403)
+    return None
+
+
+@app.after_request
+def add_security_headers(response: Response) -> Response:
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    if request.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/")

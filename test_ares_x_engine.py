@@ -90,6 +90,12 @@ class MissionEngineTests(unittest.TestCase):
             self.engine.events[-1]["type"], "replan"
         )
 
+    def test_object_id_rejects_markup_and_oversized_values(self):
+        for object_id in ("<img src=x onerror=alert(1)>", "x" * 65):
+            with self.subTest(object_id=object_id):
+                with self.assertRaises(ValueError):
+                    self.engine.add_object("rock", 4, 4, object_id=object_id)
+
     def test_crater_is_blocked_by_altimeter_with_or_without_rna(self):
         engine = MissionEngine(seed=95, train_model=False)
         engine.model = self.engine.model

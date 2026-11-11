@@ -55,6 +55,8 @@ El frontend está preparado para Netlify: publicar la raíz del repositorio
 sirve `ares_x_3d.html` en `/` y reenvía `/api/*` a la API de Render. El archivo
 `_redirects` usa `https://ares-x-api.onrender.com`; si Render asigna otra URL,
 actualiza ese destino antes de publicar el sitio.
+El archivo `_headers` añade controles básicos de seguridad para las respuestas
+estáticas.
 
 Para publicar el backend, crea un Blueprint en Render desde este repositorio y
 usa `render.yaml`. El servicio `ares-x-api` instala `requirements.txt` y ejecuta
@@ -62,6 +64,12 @@ Flask con Gunicorn. Luego conecta el mismo repositorio a Netlify con directorio
 base `.` y directorio de publicación `.`; no hace falta comando de build.
 Render en el plan gratuito puede suspender el servicio cuando está inactivo,
 por lo que la primera solicitud posterior puede tardar en responder.
+
+Las mutaciones de la API comprueban `Origin` para reducir ataques CSRF desde
+otros sitios; agrega otros dominios de frontend en Render mediante
+`ARES_ALLOWED_ORIGINS`, separados por comas. Esto no es autenticación: la API
+permanece pública y la simulación usa estado compartido entre visitantes. No
+envíes datos privados ni uses este backend como servicio de producción.
 
 ## Notebook autónomo de Google Colab
 

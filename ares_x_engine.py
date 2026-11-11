@@ -14,6 +14,7 @@ import io
 import json
 import math
 import random
+import re
 from typing import Any
 
 import numpy as np
@@ -556,6 +557,8 @@ class MissionEngine:
         if object_id is None:
             self._id_counter += 1
             object_id = f"object-{self._id_counter}"
+        elif not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", str(object_id)):
+            raise ValueError("El identificador debe tener 1–64 caracteres alfanuméricos, guiones o guiones bajos.")
         self.objects = [item for item in self.objects if item["id"] != object_id]
         self.objects.append({
             "id": str(object_id), "kind": kind, "row": int(row), "col": int(col),

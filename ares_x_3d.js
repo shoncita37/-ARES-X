@@ -1215,9 +1215,28 @@ function renderDiagnostics(data) {
   renderFitnessChart(data.routes?.history || []);
   const events = data.events || [];
   el("logCount").textContent = `${events.length} EVENTOS`;
-  el("missionLog").innerHTML = events.length
-    ? [...events].reverse().slice(0, 16).map((event) => `<div class="log-row"><time>PASO ${event.step}</time><span class="log-type">${event.type}</span><span>${event.message}</span></div>`).join("")
-    : '<div class="empty-note">Las observaciones, decisiones, eventos y replanteos aparecerán aquí.</div>';
+  const missionLog = el("missionLog");
+  missionLog.replaceChildren();
+  if (events.length) {
+    for (const event of [...events].reverse().slice(0, 16)) {
+      const row = document.createElement("div");
+      row.className = "log-row";
+      const step = document.createElement("time");
+      step.textContent = `PASO ${event.step}`;
+      const type = document.createElement("span");
+      type.className = "log-type";
+      type.textContent = event.type;
+      const message = document.createElement("span");
+      message.textContent = event.message;
+      row.append(step, type, message);
+      missionLog.append(row);
+    }
+  } else {
+    const empty = document.createElement("div");
+    empty.className = "empty-note";
+    empty.textContent = "Las observaciones, decisiones, eventos y replanteos aparecerán aquí.";
+    missionLog.append(empty);
+  }
 }
 
 function renderFitnessChart(history) {
