@@ -131,6 +131,7 @@ const state = {
   roverMoveStarted: 0,
   terrain: null,
   grid: null,
+  surfaceStones: null,
   planetVisual: null,
   dragged: null,
   dragStartPointer: null,
@@ -254,22 +255,28 @@ function terrainHeight(x, z) {
   const broad = valueNoise(x * 0.18 + 14, z * 0.18 + 8) - 0.5;
   const medium = valueNoise(x * 0.48 + 31, z * 0.48 + 19) - 0.5;
   const detail = valueNoise(x * 1.15 + 5, z * 1.15 + 37) - 0.5;
-  const ridges = Math.abs(valueNoise(x * 0.29 + 51, z * 0.29 + 11) - 0.5);
+  const fine = valueNoise(x * 2.7 + 71, z * 2.7 + 29) - 0.5;
+  const ridgeNoise = valueNoise(x * 0.29 + 51, z * 0.29 + 11);
+  const ridges = 0.5 - Math.abs(ridgeNoise - 0.5);
   const canyonCenter = Math.sin(x * 0.34 + 0.5) * 2.8
     + Math.sin(x * 0.78 + 1.2) * 0.72;
   const canyonDistance = Math.abs(z - canyonCenter);
   const canyonBed = Math.exp(-(canyonDistance ** 2) / 0.72);
   const canyonBank = Math.exp(-((canyonDistance - 1.05) ** 2) / 0.2);
-  const relief = broad * 1.45
-    + medium * 0.82
-    + detail * 0.28
-    + ridges * 0.45
-    + canyonBank * 0.38
-    - canyonBed * 0.92;
+  const dunePhase = z * 0.92 + x * 0.22 + broad * 7;
+  const dunes = Math.sin(dunePhase) * (0.07 + Math.abs(broad) * 0.2);
+  const relief = broad * 1.55
+    + medium * 0.92
+    + detail * 0.42
+    + fine * 0.12
+    + ridges * 0.55
+    + dunes
+    + canyonBank * 0.42
+    - canyonBed * 1.05;
   return profile.roughness * relief;
 }
 
-function createTerrainTexture(baseColor) {
+function createTerrainTexture(baseColor, colorSpace = THREE.SRGBColorSpace) {
   const size = 256;
   const canvas = document.createElement("canvas");
   canvas.width = size;
@@ -300,7 +307,7 @@ function createTerrainTexture(baseColor) {
   }
   context.putImageData(image, 0, 0);
   const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.colorSpace = colorSpace;
   texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   return texture;
 }
@@ -326,7 +333,7 @@ function createTerrainGrid() {
   const material = new THREE.LineBasicMaterial({
     color: 0xb7c7b9,
     transparent: true,
-    opacity: 0.18,
+    opacity: 0.12,
     depthWrite: false,
   });
   return new THREE.LineSegments(geometry, material);
@@ -414,6 +421,51 @@ function cellWorldPosition(cell, extraHeight = 0) {
   return new THREE.Vector3(p.x, terrainHeight(p.x, p.z) + extraHeight, p.z);
 }
 
+function createSurfaceStones(profile) {
+  if (profile.gasGiant) return null;
+  const count = 720;
+  const geometry = new THREE.IcosahedronGeometry(0.035, 0);
+  const material = new THREE.MeshStandardMaterial({
+    color: profile.surface,
+    roughness: 1,
+    flatShading: true,
+  });
+  const stones = new THREE.InstancedMesh(geometry, material, count);
+  const transform = new THREE.Object3D();
+  const color = new THREE.Color();
+  for (let index = 0; index < count; index += 1) {
+    const seed = index + 113;
+    const x = hashNoise(seed, 17) * (SIZE - 1.2) - (SIZE - 1.2) / 2;
+    const z = hashNoise(seed, 53) * (SIZE - 1.2) - (SIZE - 1.2) / 2;
+    const scale = 0.45 + hashNoise(seed, 97) * 1.15;
+    transform.position.set(
+      x,
+      terrainHeight(x, z) + 0.018 * scale,
+      z,
+    );
+    transform.rotation.set(
+      hashNoise(seed, 131) * Math.PI,
+      hashNoise(seed, 173) * Math.PI * 2,
+      hashNoise(seed, 211) * Math.PI,
+    );
+    transform.scale.set(
+      scale * (0.7 + hashNoise(seed, 239) * 0.8),
+      scale * (0.35 + hashNoise(seed, 257) * 0.48),
+      scale * (0.65 + hashNoise(seed, 293) * 0.8),
+    );
+    transform.updateMatrix();
+    stones.setMatrixAt(index, transform.matrix);
+    const shade = 0.72 + hashNoise(seed, 331) * 0.42;
+    color.setRGB(shade, shade * 0.98, shade * 0.94);
+    stones.setColorAt(index, color);
+  }
+  stones.instanceMatrix.needsUpdate = true;
+  if (stones.instanceColor) stones.instanceColor.needsUpdate = true;
+  stones.computeBoundingSphere();
+  stones.receiveShadow = true;
+  return stones;
+}
+
 function createTerrain() {
   if (state.terrain) {
     mapRoot.remove(state.terrain);
@@ -426,9 +478,15 @@ function createTerrain() {
     state.grid.geometry.dispose();
     state.grid.material.dispose();
   }
+  if (state.surfaceStones) {
+    mapRoot.remove(state.surfaceStones);
+    state.surfaceStones.geometry.dispose();
+    state.surfaceStones.material.dispose();
+    state.surfaceStones = null;
+  }
 
   const profile = PROFILES[state.planet];
-  const geometry = new THREE.PlaneGeometry(SIZE, SIZE, 100, 100);
+  const geometry = new THREE.PlaneGeometry(SIZE, SIZE, 160, 160);
   const positions = geometry.attributes.position;
   for (let i = 0; i < positions.count; i += 1) {
     const x = positions.getX(i);
@@ -439,6 +497,8 @@ function createTerrain() {
   geometry.computeVertexNormals();
   const material = new THREE.MeshStandardMaterial({
     map: createTerrainTexture(profile.surface),
+    bumpMap: createTerrainTexture(0x808080, THREE.NoColorSpace),
+    bumpScale: 0.12,
     roughness: 0.98,
     metalness: 0,
     side: THREE.DoubleSide,
@@ -449,6 +509,9 @@ function createTerrain() {
 
   state.grid = createTerrainGrid();
   mapRoot.add(state.grid);
+
+  state.surfaceStones = createSurfaceStones(profile);
+  if (state.surfaceStones) mapRoot.add(state.surfaceStones);
 
   if (state.planetVisual) {
     worldRoot.remove(state.planetVisual);
@@ -465,48 +528,88 @@ function createTerrain() {
     });
   }
   state.planetVisual = new THREE.Mesh(
-    new THREE.SphereGeometry(3.1, 48, 32),
+    new THREE.SphereGeometry(state.planet === "earth" ? 2.5 : 3.1, 48, 32),
     new THREE.MeshStandardMaterial({
       map: createPlanetTexture(
-        profile.surface,
-        profile.atmosphere,
+        state.planet === "earth" ? 0x164b78 : profile.surface,
+        state.planet === "earth" ? 0x4f9457 : profile.atmosphere,
         Boolean(profile.gasGiant),
       ),
+      emissive: state.planet === "earth" ? 0x15344a : 0x000000,
+      emissiveIntensity: 0.55,
       roughness: 0.96,
       metalness: 0,
     }),
   );
-  state.planetVisual.position.set(-14.6, 3.2, -15);
+  if (state.planet === "earth") {
+    camera.updateMatrixWorld();
+    const cameraRight = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+    state.planetVisual.position.copy(camera.position)
+      .addScaledVector(sunViewingDirection, SUN_DISTANCES.earth + 10)
+      .addScaledVector(cameraRight, -10);
+  } else {
+    state.planetVisual.position.set(-14.6, 3.2, -15);
+  }
   worldRoot.add(state.planetVisual);
+  updateSunForPlanet();
   state.moonSystem = null;
   if (state.planet === "earth") {
     const moonSystem = new THREE.Group();
-    const orbitRadius = 4.8;
+    const orbitRadius = 9;
+    camera.updateMatrixWorld();
+    const awayFromSun = state.planetVisual.position.clone()
+      .sub(state.sun?.position || initialSunPosition)
+      .normalize();
+    const orbitNormal = camera.position.clone()
+      .sub(state.planetVisual.position)
+      .normalize();
+    const orbitRight = awayFromSun.clone().projectOnPlane(orbitNormal).normalize();
+    const orbitUp = new THREE.Vector3().crossVectors(orbitNormal, orbitRight).normalize();
+    const orbitBasis = new THREE.Matrix4().makeBasis(orbitRight, orbitUp, orbitNormal);
+    moonSystem.quaternion.setFromRotationMatrix(orbitBasis);
     const orbitLine = new THREE.Mesh(
       new THREE.TorusGeometry(orbitRadius, 0.012, 4, 96),
       new THREE.MeshBasicMaterial({
-        color: 0xc3c8cc,
+        color: 0xd1d7dc,
         transparent: true,
-        opacity: 0.34,
+        opacity: 0.62,
         depthWrite: false,
         toneMapped: false,
       }),
     );
     moonSystem.add(orbitLine);
+    const moonTexture = createMoonTexture();
+    const moonBump = moonTexture.clone();
+    moonBump.colorSpace = THREE.NoColorSpace;
+    moonBump.needsUpdate = true;
     const moon = new THREE.Mesh(
-      new THREE.SphereGeometry(0.78, 32, 24),
+      new THREE.SphereGeometry(0.68, 40, 32),
       new THREE.MeshStandardMaterial({
-        map: createPlanetTexture(0x777a7b, 0xb2b1aa, false),
+        map: moonTexture,
+        bumpMap: moonBump,
+        bumpScale: 0.12,
+        emissive: 0x3b3b3b,
+        emissiveIntensity: 0.55,
         roughness: 1,
         metalness: 0,
       }),
     );
-    moon.position.set(-orbitRadius, 0, 0);
+    moon.position.set(orbitRadius, 0, 0);
     moonSystem.add(moon);
     state.planetVisual.add(moonSystem);
     state.moonSystem = moonSystem;
+    const atmosphere = new THREE.Mesh(
+      new THREE.SphereGeometry(2.58, 40, 28),
+      new THREE.MeshBasicMaterial({
+        color: 0x6bb8ef,
+        transparent: true,
+        opacity: 0.12,
+        side: THREE.BackSide,
+        depthWrite: false,
+      }),
+    );
+    state.planetVisual.add(atmosphere);
   }
-  updateSunForPlanet();
 
   if (state.planet === "saturn") {
     const ring = new THREE.Mesh(
@@ -669,6 +772,64 @@ function createGlowTexture() {
   return new THREE.CanvasTexture(canvas);
 }
 
+function createMoonTexture() {
+  const width = 512;
+  const height = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("No se pudo crear la textura de la Luna.");
+
+  const image = context.createImageData(width, height);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const shade = Math.round(119 + (hashNoise(x + 401, y + 97) - 0.5) * 28);
+      const offset = (y * width + x) * 4;
+      image.data[offset] = shade;
+      image.data[offset + 1] = shade;
+      image.data[offset + 2] = shade * 0.98;
+      image.data[offset + 3] = 255;
+    }
+  }
+  context.putImageData(image, 0, 0);
+
+  for (let index = 0; index < 56; index += 1) {
+    const x = hashNoise(index + 613, 47) * width;
+    const y = hashNoise(index + 827, 89) * height;
+    const radius = 3 + hashNoise(index + 1031, 131) * (index < 12 ? 18 : 10);
+    const crater = context.createRadialGradient(
+      x - radius * 0.18,
+      y - radius * 0.2,
+      radius * 0.12,
+      x,
+      y,
+      radius,
+    );
+    crater.addColorStop(0, "rgba(54,56,56,0.42)");
+    crater.addColorStop(0.64, "rgba(75,77,76,0.22)");
+    crater.addColorStop(0.82, "rgba(220,219,214,0.5)");
+    crater.addColorStop(1, "rgba(91,93,91,0.18)");
+    context.fillStyle = crater;
+    context.beginPath();
+    context.ellipse(
+      x,
+      y,
+      radius,
+      radius * (0.72 + hashNoise(index + 1291, 173) * 0.28),
+      hashNoise(index + 1531, 211) * Math.PI,
+      0,
+      Math.PI * 2,
+    );
+    context.fill();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+  return texture;
+}
+
 function createPlanetTexture(baseColor, accentColor, banded) {
   const width = 512;
   const height = 256;
@@ -782,7 +943,7 @@ function updateCosmos(now) {
     }
   }
   if (state.planetVisual) state.planetVisual.rotation.y += 0.0007;
-  if (state.moonSystem) state.moonSystem.rotation.y += 0.0012;
+  if (state.moonSystem) state.moonSystem.rotateZ(0.0012);
 }
 
 function mesh(geometry, material, position) {
@@ -1047,7 +1208,7 @@ function syncFromPython(data) {
   state.planet = data.planet;
   if (planetChanged && state.terrain) {
     createTerrain();
-    if (state.roverGroup) worldRoot.remove(state.roverGroup);
+    disposeRover();
     state.roverGroup = createRover();
     state.roverFrom = null;
   }
@@ -1365,8 +1526,9 @@ function updateMarkerPosition(marker, cell) {
 
 function createRover() {
   const rover = new THREE.Group();
-  rover.userData = { role: "rover" };
-  if (PROFILES[state.planet].gasGiant) {
+  rover.userData = { role: "rover", wheels: [] };
+  const profile = PROFILES[state.planet];
+  if (profile.gasGiant) {
     const shell = mesh(
       new THREE.SphereGeometry(0.3, 18, 14),
       new THREE.MeshStandardMaterial({ color: 0xe9ba70, metalness: 0.3, roughness: 0.44 }),
@@ -1392,69 +1554,215 @@ function createRover() {
   }
 
   const bodyMaterial = new THREE.MeshStandardMaterial({
-    color: 0xe97755, roughness: 0.54, metalness: 0.16,
+    color: 0xc96b4e, roughness: 0.7, metalness: 0.18,
   });
-  const darkMaterial = new THREE.MeshStandardMaterial({ color: 0x252a29, roughness: 0.86 });
-  const body = mesh(new THREE.BoxGeometry(0.8, 0.28, 0.62), bodyMaterial);
-  body.position.y = 0.48;
-  rover.add(body);
-  const cabin = mesh(
-    new THREE.BoxGeometry(0.37, 0.2, 0.42),
-    new THREE.MeshStandardMaterial({ color: 0xd4d8c9, metalness: 0.25, roughness: 0.46 }),
-    new THREE.Vector3(-0.02, 0.72, 0),
-  );
-  rover.add(cabin);
-  const sensor = mesh(
-    new THREE.SphereGeometry(0.1, 12, 10),
-    new THREE.MeshStandardMaterial({ color: 0x8bd1da, emissive: 0x17464b }),
-    new THREE.Vector3(0.25, 0.85, 0),
-  );
-  rover.add(sensor);
+  const lightMaterial = new THREE.MeshStandardMaterial({
+    color: 0xd4d0c0, roughness: 0.42, metalness: 0.58,
+  });
+  const darkMaterial = new THREE.MeshStandardMaterial({
+    color: 0x252a29, roughness: 0.88, metalness: 0.12,
+  });
+  const tireMaterial = new THREE.MeshStandardMaterial({
+    color: 0x242724, roughness: 0.96, metalness: 0.04,
+  });
+  const hubMaterial = new THREE.MeshStandardMaterial({
+    color: 0x8c938f, roughness: 0.54, metalness: 0.62,
+  });
   const solarMaterial = new THREE.MeshStandardMaterial({
-    color: 0x294e66, metalness: 0.52, roughness: 0.36, side: THREE.DoubleSide,
+    color: 0x24465f, metalness: 0.46, roughness: 0.42, side: THREE.DoubleSide,
   });
+
+  const chassis = mesh(
+    new THREE.BoxGeometry(0.84, 0.24, 0.58),
+    bodyMaterial,
+    new THREE.Vector3(0, 0.54, 0),
+  );
+  rover.add(chassis);
+  rover.userData.chassis = chassis;
+  rover.userData.chassisRestHeight = chassis.position.y;
+  rover.add(mesh(
+    new THREE.BoxGeometry(0.76, 0.09, 0.48),
+    darkMaterial,
+    new THREE.Vector3(0, 0.37, 0),
+  ));
+  rover.add(mesh(
+    new THREE.BoxGeometry(0.4, 0.11, 0.34),
+    lightMaterial,
+    new THREE.Vector3(-0.04, 0.72, 0),
+  ));
+  rover.add(mesh(
+    new THREE.BoxGeometry(0.16, 0.11, 0.3),
+    bodyMaterial,
+    new THREE.Vector3(0.33, 0.68, 0),
+  ));
+
+  const addArm = (from, to, radius, material) => {
+    const direction = new THREE.Vector3().subVectors(to, from);
+    const arm = mesh(
+      new THREE.CylinderGeometry(radius, radius, direction.length(), 8),
+      material,
+      new THREE.Vector3().addVectors(from, to).multiplyScalar(0.5),
+    );
+    arm.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      direction.normalize(),
+    );
+    rover.add(arm);
+  };
   for (const side of [-1, 1]) {
-    const panel = mesh(
-      new THREE.BoxGeometry(0.72, 0.035, 0.37),
-      solarMaterial,
-      new THREE.Vector3(-0.02, 0.47, side * 0.65),
+    const sideOffset = side * 0.42;
+    const rear = new THREE.Vector3(-0.44, 0.2, sideOffset);
+    const center = new THREE.Vector3(0, 0.2, sideOffset);
+    const front = new THREE.Vector3(0.44, 0.2, sideOffset);
+    const rockerPivot = new THREE.Vector3(-0.02, 0.42, side * 0.31);
+    addArm(rockerPivot, rear, 0.034, lightMaterial);
+    addArm(rear, center, 0.026, darkMaterial);
+    addArm(center, front, 0.026, darkMaterial);
+    addArm(
+      new THREE.Vector3(0, 0.38, side * 0.31),
+      center,
+      0.018,
+      lightMaterial,
     );
-    panel.rotation.x = side * 0.035;
-    rover.add(panel);
-    const strut = mesh(
-      new THREE.CylinderGeometry(0.018, 0.018, 0.42, 6),
-      darkMaterial,
-      new THREE.Vector3(-0.02, 0.34, side * 0.48),
-    );
-    strut.rotation.x = Math.PI / 2;
-    rover.add(strut);
-  }
-  const mast = mesh(
-    new THREE.CylinderGeometry(0.025, 0.025, 0.5, 8),
-    new THREE.MeshStandardMaterial({ color: 0xb9c2b9, metalness: 0.55 }),
-    new THREE.Vector3(-0.26, 0.82, 0),
-  );
-  rover.add(mast);
-  const dish = mesh(
-    new THREE.SphereGeometry(0.16, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2),
-    new THREE.MeshStandardMaterial({ color: 0xd5cfb6, metalness: 0.46, roughness: 0.4 }),
-    new THREE.Vector3(-0.26, 1.08, 0),
-  );
-  dish.rotation.x = -Math.PI / 2;
-  rover.add(dish);
-  for (const x of [-0.29, 0.29]) {
-    for (const z of [-0.38, 0.38]) {
-      const wheel = mesh(
-        new THREE.CylinderGeometry(0.16, 0.16, 0.12, 12),
+    for (const joint of [rear, center, front]) {
+      rover.add(mesh(
+        new THREE.SphereGeometry(0.055, 10, 8),
         darkMaterial,
-        new THREE.Vector3(x, 0.29, z),
+        joint.clone(),
+      ));
+      const wheel = new THREE.Group();
+      wheel.position.copy(joint);
+      wheel.userData.rotationAtMoveStart = 0;
+      const tire = mesh(
+        new THREE.CylinderGeometry(0.15, 0.15, 0.13, 18, 1, false),
+        tireMaterial,
       );
-      wheel.rotation.z = Math.PI / 2;
+      tire.rotation.x = Math.PI / 2;
+      wheel.add(tire);
+      const sidewall = mesh(
+        new THREE.TorusGeometry(0.118, 0.025, 6, 18),
+        tireMaterial,
+      );
+      wheel.add(sidewall);
+      for (const face of [-1, 1]) {
+        const hub = mesh(
+          new THREE.CylinderGeometry(0.067, 0.067, 0.145, 12),
+          hubMaterial,
+        );
+        hub.rotation.x = Math.PI / 2;
+        hub.position.z = face * 0.012;
+        wheel.add(hub);
+      }
+      for (let tread = 0; tread < 10; tread += 1) {
+        const angle = (tread / 10) * Math.PI * 2;
+        const pad = mesh(
+          new THREE.BoxGeometry(0.065, 0.032, 0.14),
+          tireMaterial,
+          new THREE.Vector3(Math.cos(angle) * 0.145, Math.sin(angle) * 0.145, 0),
+        );
+        pad.rotation.z = angle;
+        wheel.add(pad);
+      }
       rover.add(wheel);
+      rover.userData.wheels.push(wheel);
     }
   }
+
+  const panelFrameMaterial = new THREE.MeshStandardMaterial({
+    color: 0x161e23, roughness: 0.72, metalness: 0.38,
+  });
+  for (const side of [-1, 1]) {
+    const panelZ = side * 0.69;
+    rover.add(mesh(
+      new THREE.BoxGeometry(0.7, 0.035, 0.36),
+      panelFrameMaterial,
+      new THREE.Vector3(-0.03, 0.62, panelZ),
+    ));
+    rover.add(mesh(
+      new THREE.BoxGeometry(0.64, 0.014, 0.3),
+      solarMaterial,
+      new THREE.Vector3(-0.03, 0.645, panelZ),
+    ));
+    for (const x of [-0.24, -0.03, 0.18]) {
+      rover.add(mesh(
+        new THREE.BoxGeometry(0.012, 0.006, 0.3),
+        hubMaterial,
+        new THREE.Vector3(x, 0.655, panelZ),
+      ));
+    }
+    rover.add(mesh(
+      new THREE.BoxGeometry(0.64, 0.006, 0.012),
+      hubMaterial,
+      new THREE.Vector3(-0.03, 0.655, panelZ),
+    ));
+    addArm(
+      new THREE.Vector3(-0.03, 0.46, side * 0.32),
+      new THREE.Vector3(-0.03, 0.6, panelZ),
+      0.014,
+      lightMaterial,
+    );
+  }
+
+  rover.add(mesh(
+    new THREE.CylinderGeometry(0.022, 0.028, 0.46, 8),
+    lightMaterial,
+    new THREE.Vector3(0.16, 0.87, 0),
+  ));
+  rover.add(mesh(
+    new THREE.BoxGeometry(0.18, 0.12, 0.18),
+    darkMaterial,
+    new THREE.Vector3(0.16, 1.12, 0),
+  ));
+  for (const side of [-1, 1]) {
+    const cameraLens = mesh(
+      new THREE.SphereGeometry(0.035, 10, 8),
+      new THREE.MeshStandardMaterial({
+        color: 0x73c8d2, emissive: 0x15464b, roughness: 0.28,
+      }),
+      new THREE.Vector3(0.26, 1.13, side * 0.055),
+    );
+    rover.add(cameraLens);
+    rover.add(mesh(
+      new THREE.SphereGeometry(0.035, 10, 8),
+      new THREE.MeshStandardMaterial({
+        color: 0xffd18a, emissive: 0x6a3514, roughness: 0.3,
+      }),
+      new THREE.Vector3(0.45, 0.62, side * 0.2),
+    ));
+  }
+  const antenna = mesh(
+    new THREE.CylinderGeometry(0.008, 0.008, 0.32, 6),
+    lightMaterial,
+    new THREE.Vector3(-0.27, 0.92, 0),
+  );
+  antenna.rotation.z = -0.12;
+  rover.add(antenna);
+  rover.add(mesh(
+    new THREE.SphereGeometry(0.035, 10, 8),
+    bodyMaterial,
+    new THREE.Vector3(-0.31, 1.08, 0),
+  ));
   worldRoot.add(rover);
   return rover;
+}
+
+function disposeRover() {
+  if (!state.roverGroup) return;
+  worldRoot.remove(state.roverGroup);
+  const geometries = new Set();
+  const materialsToDispose = new Set();
+  state.roverGroup.traverse((child) => {
+    if (!child.isMesh) return;
+    geometries.add(child.geometry);
+    for (const material of Array.isArray(child.material)
+      ? child.material
+      : [child.material]) {
+      materialsToDispose.add(material);
+    }
+  });
+  for (const geometry of geometries) geometry.dispose();
+  for (const material of materialsToDispose) material.dispose();
+  state.roverGroup = null;
 }
 
 function updateRoverTarget() {
@@ -1656,6 +1964,9 @@ async function advanceOneStep() {
       state.roverFrom = cellWorldPosition(previous, 0.04);
       state.roverTo = cellWorldPosition(state.rover, 0.04);
       state.roverMoveStarted = performance.now();
+      for (const wheel of state.roverGroup?.userData.wheels || []) {
+        wheel.userData.rotationAtMoveStart = wheel.rotation.z;
+      }
     }
     if (data.failure) {
       stopMission(data.failure, "error");
@@ -1717,7 +2028,7 @@ async function syncPlanet() {
   createTerrain();
   const data = await postAndSync("/api/config", { planet: state.planet });
   if (data) {
-    if (state.roverGroup) worldRoot.remove(state.roverGroup);
+    disposeRover();
     state.roverGroup = createRover();
     state.roverFrom = null;
     updateRoverTarget();
@@ -2141,6 +2452,17 @@ function animate() {
   if (state.roverFrom && state.roverTo && state.roverGroup) {
     const amount = Math.min(1, (performance.now() - state.roverMoveStarted) / 360);
     state.roverGroup.position.lerpVectors(state.roverFrom, state.roverTo, amount);
+    const movement = new THREE.Vector3().subVectors(state.roverTo, state.roverFrom);
+    const travel = Math.hypot(movement.x, movement.z) * amount;
+    state.roverGroup.rotation.y = Math.atan2(-movement.z, movement.x);
+    const chassis = state.roverGroup.userData.chassis;
+    if (chassis) {
+      chassis.position.y = state.roverGroup.userData.chassisRestHeight
+        + Math.sin(amount * Math.PI) * 0.025;
+    }
+    for (const wheel of state.roverGroup.userData.wheels || []) {
+      wheel.rotation.z = wheel.userData.rotationAtMoveStart + travel / 0.15;
+    }
     if (amount >= 1) state.roverFrom = null;
   }
   renderer.render(scene, camera);

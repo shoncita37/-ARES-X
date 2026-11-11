@@ -248,7 +248,7 @@ input[type="range"]::-moz-range-thumb { width: 9px; height: 9px; border-radius: 
 .compact-section .section-heading { margin-bottom: 3px; }
 .battery-value { color: var(--accent); font: 10px var(--mono); }
 
-.mission-controls { margin-top: auto; }
+.mission-controls { margin-top: 0; }
 .play-button {
   width: 100%;
   height: 43px;

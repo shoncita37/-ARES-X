@@ -37,17 +37,19 @@ reglas difusas, evolución del AG, bitácora y resultados experimentales.
 
 El mapa incluye relieve erosionado, textura superficial procedural y modelos
 visuales más detallados para piedras, cráteres, nubes de gas y barrancos. Esos
-detalles de elevación son ilustrativos: la ruta calcula el riesgo a partir de
-los elementos y sensores de la simulación, no de la altura geométrica del
-terreno.
+detalles de elevación y los 720 fragmentos de roca distribuidos por la escena
+son ilustrativos. El rover visual tiene seis ruedas, suspensión articulada y
+ruedas que giran durante el avance; su movimiento no es una simulación física.
+La ruta calcula el riesgo a partir de los elementos y sensores de la
+simulación, no de la altura geométrica del terreno.
 
 En Júpiter, Saturno, Urano y Neptuno se usa una cuadrícula virtual de sonda,
 no una superficie sólida. El fondo representa el Sol y varios planetas; la
-Luna aparece orbitando el perfil de la Tierra. La distancia visual del Sol
-aumenta según el planeta seleccionado, pero las distancias se comprimen y los
-tamaños se ajustan para que sean visibles junto al mapa: no están a escala
-astronómica. Los cuerpos del fondo son decorativos y no participan en la
-navegación.
+Luna aparece orbitando la Tierra al seleccionarla, en el lado opuesto al Sol,
+con una textura de cráteres. La distancia visual del Sol aumenta según el
+planeta seleccionado, pero las distancias se comprimen y los tamaños se
+ajustan para que sean visibles junto al mapa: no están a escala astronómica.
+Los cuerpos del fondo son decorativos y no participan en la navegación.
 
 ## Despliegue público
 
@@ -106,7 +108,7 @@ para la versión híbrida usa el notebook nuevo.
 ## Pruebas
 
 ```powershell
-py -m unittest -v test_ares_x_engine.py
+py -m unittest discover -v -p "test_*.py"
 ```
 
 ## Archivos principales
